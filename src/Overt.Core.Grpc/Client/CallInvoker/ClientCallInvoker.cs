@@ -1,4 +1,5 @@
 ﻿using Grpc.Core;
+using Grpc.Core.Interceptors;
 using Overt.Core.Grpc.Intercept;
 using System;
 using System.Collections.Generic;
@@ -13,12 +14,20 @@ namespace Overt.Core.Grpc
         private readonly IClientTracer _tracer;
         public Func<List<ServerCallInvoker>, ServerCallInvoker> CustomAction;
 
-        public ClientCallInvoker(IEndpointStrategy strategy, string serviceName, int maxRetry = 0, IClientTracer tracer = null)
+        private List<Interceptor> _interceptors;
+        public ClientCallInvoker(IEndpointStrategy strategy, string serviceName, int maxRetry = 0, IClientTracer tracer = null, List<Interceptor> interceptors = null)
         {
             _strategy = strategy;
             _serviceName = serviceName;
             _maxRetry = maxRetry;
             _tracer = tracer;
+            _interceptors = interceptors;
+
+            if (_tracer != null)
+            {
+                _interceptors = _interceptors ?? new List<Interceptor>();
+                _interceptors.Add(new ClientTracerInterceptor(_tracer));
+            }
         }
 
         public override TResponse BlockingUnaryCall<TRequest, TResponse>(Method<TRequest, TResponse> method, string host, CallOptions options, TRequest request)
@@ -80,14 +89,16 @@ namespace Overt.Core.Grpc
                         throw new RpcException(new Status(StatusCode.Unavailable, $"Channel Failure"));
                     }
 
-                    var response = default(TResponse);
                     if (_tracer != null)
                     {
                         _tracer.CallInvokers = _strategy.GetCallInvokers(_serviceName);
-                        callInvoker = callInvoker.ClientIntercept(_tracer);
                     }
-                    response = call(callInvoker);
-                    return response;
+                    if (_interceptors?.Count > 0)
+                    {
+                        return call(callInvoker.Intercept(_interceptors.ToArray()));
+                    }
+
+                    return call(callInvoker);
                 }
                 catch (RpcException ex)
                 {

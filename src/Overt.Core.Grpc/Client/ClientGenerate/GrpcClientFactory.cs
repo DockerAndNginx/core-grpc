@@ -1,10 +1,13 @@
 ﻿using Grpc.Core;
+using Grpc.Core.Interceptors;
 using Overt.Core.Grpc.Intercept;
+using System.Collections.Generic;
 #if ASP_NET_CORE
 using Microsoft.Extensions.Options;
 #endif
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Overt.Core.Grpc
 {
@@ -14,18 +17,22 @@ namespace Overt.Core.Grpc
     public class GrpcClientFactory<T> : IGrpcClientFactory<T> where T : ClientBase
     {
         private readonly IClientTracer _tracer;
+        private readonly List<Interceptor> _interceptors;
 
 #if ASP_NET_CORE
         private readonly GrpcClientOptions<T> _options;
-        public GrpcClientFactory(IOptions<GrpcClientOptions<T>> options = null, IClientTracer tracer = null)
+
+        public GrpcClientFactory(IOptions<GrpcClientOptions<T>> options = null, IClientTracer tracer = null, IOptions<GrpcClientOptions> grpcOptions = null)
         {
             _options = options?.Value;
             _tracer = tracer;
+            _interceptors = grpcOptions?.Value?.Interceptors;
         }
 #else
-        public GrpcClientFactory(IClientTracer tracer = null)
+        public GrpcClientFactory(IClientTracer tracer = null, List<Interceptor> interceptors = null)
         {
             _tracer = tracer;
+            _interceptors = interceptors;
         }
 #endif
 
@@ -51,7 +58,7 @@ namespace Overt.Core.Grpc
         private ClientCallInvoker GetCallInvoker(string configPath = "")
         {
             var exitus = StrategyFactory.Get<T>(GetConfigPath(configPath));
-            var callInvoker = new ClientCallInvoker(exitus.EndpointStrategy, exitus.ServiceName, exitus.MaxRetry, _tracer);
+            var callInvoker = new ClientCallInvoker(exitus.EndpointStrategy, exitus.ServiceName, exitus.MaxRetry, _tracer, _interceptors);
             return callInvoker;
         }
 
@@ -70,6 +77,6 @@ namespace Overt.Core.Grpc
 
             return configPath;
         }
-#endregion
+        #endregion
     }
 }
